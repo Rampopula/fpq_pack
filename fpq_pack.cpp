@@ -1,7 +1,3 @@
-/**
- *  Creating virtual serial port command: socat -d -d pty,raw,echo=0 pty,raw,echo=0
-*/
-
 #include <cstdint>
 #include <iostream>
 #include <memory>
