@@ -66,7 +66,6 @@ class FirmwareFile {
 			fseek(file, offset, SEEK_SET);
 			return fwrite(data, sizeof(uint8_t), size, file);
 		}
-
 	private:
 		FILE *file;
 };
@@ -143,7 +142,7 @@ int32_t main(int argc, char *argv[]) {
 		if (ubootFile.isOpened()) {
 			fileSize = ubootFile.size();
 			if (debug) std::cout << "uboot size: 0x" << std::hex << fileSize << " b" << std::endl;
-			fileBuffer[UBoot] = std::unique_ptr<uint8_t[]>(new uint8_t[fileSize]);
+			fileBuffer[UBoot] = std::unique_ptr<uint8_t[]>(new uint8_t[FIRMWARE_ALIGN(fileSize)]);
 			if (ubootFile.read(fileBuffer[UBoot].get(), fileSize) != fileSize) {
 				std::cout << "Unable to read uboot file!" << std::endl;
 				return -1;
@@ -152,7 +151,7 @@ int32_t main(int argc, char *argv[]) {
 		else if (debug) std::cout << "skipping uboot..." << std::endl; 
 
 		// Set UBoot offset & size
-		firmwareHeader.uboot_size = fileSize;
+		firmwareHeader.uboot_size = FIRMWARE_ALIGN(fileSize);
 		firmwareHeader.uboot_offset = FIRMWARE_BLOCK_SIZE;
 	}
 
@@ -163,7 +162,7 @@ int32_t main(int argc, char *argv[]) {
 		if (linuxFile.isOpened()) {
 			fileSize = linuxFile.size();
 			if (debug) std::cout << "linux size: 0x" << fileSize << " b" << std::endl;
-			fileBuffer[Linux] = std::unique_ptr<uint8_t[]>(new uint8_t[fileSize]);
+			fileBuffer[Linux] = std::unique_ptr<uint8_t[]>(new uint8_t[FIRMWARE_ALIGN(fileSize)]);
 			if (linuxFile.read(fileBuffer[Linux].get(), fileSize) != fileSize) {
 				std::cout << "Unable to read linux file!" << std::endl;
 				return -1;
@@ -172,8 +171,8 @@ int32_t main(int argc, char *argv[]) {
 		else if (debug) std::cout << "skipping linux..." << std::endl;
 
 		// Set Linux offset & size
-		firmwareHeader.linux_size = fileSize;
-		firmwareHeader.linux_offset = FIRMWARE_ALIGN(firmwareHeader.uboot_offset + firmwareHeader.uboot_size);
+		firmwareHeader.linux_size = FIRMWARE_ALIGN(fileSize);
+		firmwareHeader.linux_offset = firmwareHeader.uboot_offset + firmwareHeader.uboot_size;
 	}
 
 	{
@@ -183,7 +182,7 @@ int32_t main(int argc, char *argv[]) {
 		if (liteosFile.isOpened()) { 
 			fileSize = liteosFile.size();
 			if (debug) std::cout << "liteos size: 0x" << fileSize << " b" << std::endl;
-			fileBuffer[LiteOS] = std::unique_ptr<uint8_t[]>(new uint8_t[fileSize]);
+			fileBuffer[LiteOS] = std::unique_ptr<uint8_t[]>(new uint8_t[FIRMWARE_ALIGN(fileSize)]);
 			if (liteosFile.read(fileBuffer[LiteOS].get(), fileSize) != fileSize) {
 				std::cout << "Unable to read liteos file!" << std::endl;
 				return -1;
@@ -192,8 +191,8 @@ int32_t main(int argc, char *argv[]) {
 		else if (debug) std::cout << "skipping liteos..." << std::endl;
 
 		// Set LiteOS offset & size
-		firmwareHeader.liteos_size = fileSize;
-		firmwareHeader.liteos_offset = FIRMWARE_ALIGN(firmwareHeader.linux_offset + firmwareHeader.linux_size);
+		firmwareHeader.liteos_size = FIRMWARE_ALIGN(fileSize);
+		firmwareHeader.liteos_offset = firmwareHeader.linux_offset + firmwareHeader.linux_size;
 	}
 
 	{
@@ -203,7 +202,7 @@ int32_t main(int argc, char *argv[]) {
 		if (rootfsFile.isOpened()) {
 			fileSize = rootfsFile.size();
 			if (debug) std::cout << "rootfs size: 0x" << fileSize << " b" << std::endl;
-			fileBuffer[RootFS] = std::unique_ptr<uint8_t[]>(new uint8_t[fileSize]);
+			fileBuffer[RootFS] = std::unique_ptr<uint8_t[]>(new uint8_t[FIRMWARE_ALIGN(fileSize)]);
 			if (rootfsFile.read(fileBuffer[RootFS].get(), fileSize) != fileSize) {
 				std::cout << "Unable to read rootfs!" << std::endl;
 				return -1;
@@ -212,8 +211,8 @@ int32_t main(int argc, char *argv[]) {
 		else if (debug) std::cout << "skipping rootfs..." << std::endl;
 
 		// Set RootFS offset & size
-		firmwareHeader.rootfs_size = fileSize;
-		firmwareHeader.rootfs_offset = FIRMWARE_ALIGN(firmwareHeader.liteos_offset + firmwareHeader.liteos_size);
+		firmwareHeader.rootfs_size = FIRMWARE_ALIGN(fileSize);
+		firmwareHeader.rootfs_offset = firmwareHeader.liteos_offset + firmwareHeader.liteos_size;
 	}
 
 	{
