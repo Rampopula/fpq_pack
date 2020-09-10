@@ -71,10 +71,12 @@ class FirmwareFile {
 };
 
 
-enum  Firmware { UBoot = 0, Linux, LiteOS, RootFS, Count_ };
+enum  Firmware { Config = 0, UBoot, Linux, LiteOS, RootFS, Count_ };
 
 struct FirmwareHeader {
 	const char firmware_magic[16] = {'~','m','a','g','i','c','~','f','i','r','m','w','a','r','e','~',};
+	uint32_t config_size;
+	uint32_t config_offset;
 	uint32_t uboot_size;
 	uint32_t uboot_offset;
 	uint32_t linux_size;
@@ -83,7 +85,7 @@ struct FirmwareHeader {
 	uint32_t liteos_offset;
 	uint32_t rootfs_size;
 	uint32_t rootfs_offset;
-	uint8_t alignment[464];
+	uint8_t config[456];
 };
 
 
@@ -93,14 +95,19 @@ int32_t main(int argc, char *argv[]) {
 	bool debug = false;
 	unsigned fileSize;
 	bool inputSpecified = false;
+	bool configSpecified = false;
 	std::unique_ptr<uint8_t[]> fileBuffer[Count_];
 	auto currentDir = std::unique_ptr<char,decltype(&free)>(get_current_dir_name(), free);
 	std::string outputPath(currentDir.get() + std::string("/firmware.bin"));
 	std::string firmwarePath[Count_];
 	FirmwareHeader firmwareHeader;
 
-	while((opt = getopt(argc, argv, "db:x:s:f:o:")) != -1) {
+	while((opt = getopt(argc, argv, "dc:b:x:s:f:o:")) != -1) {
 		switch(opt) {
+			case 'c':
+				firmwarePath[Config] = std::string(optarg);
+				configSpecified = true;
+			break;
 			case 'b': 
 				firmwarePath[UBoot] = std::string(optarg);
 				inputSpecified = true;
@@ -129,12 +136,41 @@ int32_t main(int argc, char *argv[]) {
 			break;
 		}
 	}
+
+	if (!configSpecified) {
+		help();
+		std::cout << "Config file not specified!" << std::endl;
+		return -1;
+	}
+
 	if (!inputSpecified) {
 		help();
 		std::cout << "No input files specified!" << std::endl;
 		return -1;
 	}
 	
+	{
+		// Open Config
+		fileSize = 0;
+		FirmwareFile configFile(firmwarePath[Config].c_str());
+		if (configFile.isOpened()) {
+			fileSize = configFile.size();
+			if (debug) std::cout << "uboot size: 0x" << std::hex << fileSize << " b" << std::endl;
+			if (fileSize > sizeof(firmwareHeader.config)) {
+				std::cout << "Config file size must be <= " << sizeof(firmwareHeader.config) << "!" << std::endl;
+				return -1;
+			}
+			if (configFile.read(firmwareHeader.config, fileSize) != fileSize) {
+				std::cout << "Unable to read config file!" << std::endl;
+				return -1;
+			}
+		}
+
+		// Set Config offset & size
+		firmwareHeader.config_size = fileSize;
+		firmwareHeader.config_offset = sizeof(firmwareHeader) - sizeof(firmwareHeader.config);
+	}
+
 	{	
 		// Open UBoot
 		fileSize = 0;
@@ -232,14 +268,12 @@ int32_t main(int argc, char *argv[]) {
 			outputFile.write(fileBuffer[UBoot].get(), firmwareHeader.uboot_size, firmwareHeader.uboot_offset);
 		}
 		
-
 		// Write Linux
 		if (fileBuffer[Linux].get()) {
 			if (debug) std::cout << "linux offset: 0x" << firmwareHeader.linux_offset << std::endl;
 			outputFile.write(fileBuffer[Linux].get(), firmwareHeader.linux_size, firmwareHeader.linux_offset);
 		}
 		
-
 		// Write LiteOS
 		if (fileBuffer[LiteOS].get()) {
 			if (debug) std::cout << "liteos offset: 0x" << firmwareHeader.liteos_offset << std::endl;
