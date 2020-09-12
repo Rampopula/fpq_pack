@@ -10,7 +10,7 @@
 
 #ifdef _WIN32
     #ifndef NOMINMAX
-	    #define NOMINMAX
+        #define NOMINMAX
     #endif
     #include <windows.h>
     #include "getopt.h"
@@ -68,7 +68,7 @@ struct FPQHeader {
 
     FPQHeader() { std::memcpy(firmware_magic, "~magic~firmware~", sizeof(firmware_magic)); }
 
-	char firmware_magic[16];
+    char firmware_magic[16];
     _field _config;
     _field _uboot;
     _field _linux;
@@ -107,35 +107,35 @@ struct FPQHeader {
 } __attribute__((aligned(512)));
 
 class FPQFile {
-	public:
-		enum class OpenMode {RWOpen, RWCreate};
+    public:
+        enum class OpenMode {RWOpen, RWCreate};
 
-		explicit FPQFile(std::string path, FPQFile::OpenMode mode) : file(NULL), fileSize(0) {
-			file = fopen(path.c_str(), (mode == FPQFile::OpenMode::RWCreate) ? "w+b" : "r+b");
+        explicit FPQFile(std::string path, FPQFile::OpenMode mode) : file(NULL), fileSize(0) {
+            file = fopen(path.c_str(), (mode == FPQFile::OpenMode::RWCreate) ? "w+b" : "r+b");
             if (file) {
                 fseek(file, 0L, SEEK_END);
                 fileSize = ftell(file);
                 fseek(file, 0L, SEEK_SET);
             }
-		}
-		explicit FPQFile(std::string path) : FPQFile(path, FPQFile::OpenMode::RWOpen) {}
-		~FPQFile() { if (file) fclose(file); }
+        }
+        explicit FPQFile(std::string path) : FPQFile(path, FPQFile::OpenMode::RWOpen) {}
+        ~FPQFile() { if (file) fclose(file); }
 
-		bool isOpened(void) const { return file ? true : false; }
+        bool isOpened(void) const { return file ? true : false; }
 
         void seek(long offset) { fseek(file, offset, SEEK_SET); }
 
-		unsigned size() const { return fileSize; }
+        unsigned size() const { return fileSize; }
 
-		bool read(uint8_t *data, unsigned size) {
-			return (fread(data, sizeof(uint8_t), size, file) == size) ? true : false;
-		}
+        bool read(uint8_t *data, unsigned size) {
+            return (fread(data, sizeof(uint8_t), size, file) == size) ? true : false;
+        }
 
-		bool write(uint8_t *data, unsigned size) {
-			return (fwrite(data, sizeof(uint8_t), size, file) == size) ? true : false;
-		}
-	private:
-		FILE *file;
+        bool write(uint8_t *data, unsigned size) {
+            return (fwrite(data, sizeof(uint8_t), size, file) == size) ? true : false;
+        }
+    private:
+        FILE *file;
         unsigned fileSize;
 };
 
@@ -187,7 +187,7 @@ std::string getCurrentDir(void) {
         currentDir = std::string(buffer.get());
     #endif
 
-	return currentDir;
+    return currentDir;
 }
 
 bool isConfigSpecified(std::map<int,std::string> &fpqFiles) {
@@ -206,8 +206,8 @@ int32_t main(int argc, char *argv[]) {
 
     PRINT_LONG_CAPTION;
 
-	int opt;
-	bool debug = false;
+    int opt;
+    bool debug = false;
     FPQHeader header;
     FPQEncryptor encryptor;
     std::map<int,std::string> fpqFiles;
@@ -226,15 +226,15 @@ int32_t main(int argc, char *argv[]) {
         return -1;
     }
 
-	while((opt = getopt(argc, argv, "c:b:x:s:f:o:k:d:")) != -1) {
-		switch(opt) {
+    while((opt = getopt(argc, argv, "c:b:x:s:f:o:k:d:")) != -1) {
+        switch(opt) {
             case 'd': debug = true; break;
-			case 'c': fpqFiles[FPQHeader::Type::Config] = std::string(optarg); break;
-			case 'b': fpqFiles[FPQHeader::Type::UBoot] = std::string(optarg);  break;
-			case 'x': fpqFiles[FPQHeader::Type::Linux] = std::string(optarg);  break;
-			case 's': fpqFiles[FPQHeader::Type::LiteOS] = std::string(optarg); break;
-			case 'f': fpqFiles[FPQHeader::Type::RootFS] = std::string(optarg); break;
-			case 'o': outputPath = std::string(optarg); break;
+            case 'c': fpqFiles[FPQHeader::Type::Config] = std::string(optarg); break;
+            case 'b': fpqFiles[FPQHeader::Type::UBoot] = std::string(optarg);  break;
+            case 'x': fpqFiles[FPQHeader::Type::Linux] = std::string(optarg);  break;
+            case 's': fpqFiles[FPQHeader::Type::LiteOS] = std::string(optarg); break;
+            case 'f': fpqFiles[FPQHeader::Type::RootFS] = std::string(optarg); break;
+            case 'o': outputPath = std::string(optarg); break;
             case 'k': 
                 encryptor = std::string(optarg);
                 if (!encryptor.isKeyValid()) {
@@ -242,23 +242,23 @@ int32_t main(int argc, char *argv[]) {
                     return -1;
                 }
             break;
-			default: 
+            default: 
                 printHelp(); return -1; 
             break;
-		}
-	}
+        }
+    }
   
-	if (!isConfigSpecified(fpqFiles)) {
-		printHelp();
-		std::cout << "Error! Config file is not specified!" << std::endl;
-		return -1;
-	}
+    if (!isConfigSpecified(fpqFiles)) {
+        printHelp();
+        std::cout << "Error! Config file is not specified!" << std::endl;
+        return -1;
+    }
 
-	if (!isInputSpecified(fpqFiles)) {
-		printHelp();
-		std::cout << "Error! No input files specified!" << std::endl;
-		return -1;
-	}
+    if (!isInputSpecified(fpqFiles)) {
+        printHelp();
+        std::cout << "Error! No input files specified!" << std::endl;
+        return -1;
+    }
 
     if (debug) std::cout << "Output file: '" << outputPath << "'" << std::endl;
     FPQFile output(outputPath, FPQFile::OpenMode::RWCreate);
@@ -308,6 +308,6 @@ int32_t main(int argc, char *argv[]) {
         return -1;     
     }
 
-	std::cout << "Done!" << std::endl; 
+    std::cout << "Done!" << std::endl; 
     return 0;
 }
