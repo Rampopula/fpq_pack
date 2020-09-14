@@ -66,7 +66,10 @@ void printHelp() {
 struct FPQHeader {
     struct _field { uint32_t size; uint32_t offset; };
 
-    FPQHeader() { std::memcpy(firmware_magic, "~magic~firmware~", sizeof(firmware_magic)); }
+    FPQHeader() { 
+		std::memset((uint8_t*)&_config, 0x00, sizeof(_config) * 5);
+		std::memcpy(firmware_magic, "~magic~firmware~", sizeof(firmware_magic));
+	}
 
     char firmware_magic[16];
     _field _config;
@@ -154,10 +157,12 @@ class FPQEncryptor {
             if (!isKeyValid()) return;
             std::vector<uint8_t>::iterator it = data.begin();
             for (unsigned i = 0; i < (data.size() / key.length()); ++i) {
+				#if 0
                 if (!isEncodingAvailable(it)) {
                     it += key.length();
                     continue;
                 }
+				#endif
                 for (auto keyByte : key) { 
                     *it ^= keyByte; ++it;
                 }
