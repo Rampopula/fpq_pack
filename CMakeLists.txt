@@ -22,7 +22,11 @@ else()
     set(SRC src/app/fpq_pack)
 endif()
 
+add_subdirectory(src/crc32)
+
 # Build application
 set(NAME fpq_pack)
 add_executable(${NAME} ${SRC})
 target_include_directories(${NAME} PUBLIC build/)
+target_include_directories(${NAME} PUBLIC src/crc32/)
+target_link_libraries(${NAME} PUBLIC crc32)
