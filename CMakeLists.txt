@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
 
 # Application versino
 set(PROJECT_NAME FPQPacker)
-project(${PROJECT_NAME} VERSION "0.3")
+project(${PROJECT_NAME} VERSION "0.4")
 configure_file(src/app/version.h.in version.h)
 
 # Set compiler && linker options

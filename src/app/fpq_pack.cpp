@@ -49,7 +49,7 @@
 
 
 void printHelp() {
-    std::cout << "Usage: fpq_pack [-k] [value] [-d] [value]" << std::endl;
+    std::cout << "Usage: fpq_pack [-k] [value] [-h] [value] [-d] [value]" << std::endl;
     std::cout << "                [-o] [file]  [-c] [file]" << std::endl;
     std::cout << "                [-b] [file]  [-x] [file]" << std::endl;
     std::cout << "                [-s] [file]  [-f] [file]" << std::endl << std::endl;
@@ -61,8 +61,8 @@ void printHelp() {
     std::cout << "\t -b, \tfirmware: 'u-boot.bin' path" << std::endl;
     std::cout << "\t -x, \tfirmware: 'uImage' path" << std::endl;
     std::cout << "\t -s, \tfirmware: 'media_app_zip.bin' path" << std::endl;
-    std::cout << "\t -f, \tfirmware: 'rootfs.cramfs.img' path" << std::endl << std::endl;
-	std::cout << "\t -h, \tfirmware: serial hex string (default: B00B0069)" << std::endl;
+    std::cout << "\t -f, \tfirmware: 'rootfs.cramfs.img' path" << std::endl;
+	std::cout << "\t -h, \tfirmware: serial hex string (default: B00B0069)" << std::endl << std::endl;
 }
 
 struct FPQHeader {
@@ -260,7 +260,7 @@ int32_t main(int argc, char *argv[]) {
         return -1;
     }
 
-    while((opt = getopt(argc, argv, "c:b:x:s:f:o:k:d:")) != -1) {
+    while((opt = getopt(argc, argv, "c:b:x:s:f:o:k:d:h:")) != -1) {
         switch(opt) {
             case 'd': debug = true; break;
             case 'c': fpqFiles[FPQHeader::Type::Config] = std::string(optarg); break;
@@ -296,9 +296,7 @@ int32_t main(int argc, char *argv[]) {
     }
 
     if (!isInputSpecified(fpqFiles)) {
-        printHelp();
-        std::cout << "Error! No input files specified!" << std::endl;
-        return -1;
+        std::cout << "No input files specified! Only serial will be set!" << std::endl;
     }
 
     if (debug) std::cout << "Output file: '" << outputPath << "'" << std::endl;
