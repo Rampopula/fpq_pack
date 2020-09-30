@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -20,18 +21,18 @@
     #include <unistd.h>
 #endif
 
-#define VER             	" v" VERSION
-#define DEFAULT_SERIAL		"B00B0069"
-#define PRINT_CAPTION   	do { \
-								uint8_t fpq_x[15] = {0x19,0x0f,0x22,0x54,0x25, \
-													0x0d,0x00,0x03,0x0c,0x19, \
-													0x0e,0x15,0x52,0x71,0x6f}; \
-								uint8_t fpq_y[15] = {0x36,0x36,0x1a,0x1d,0x1c, \
-													0x05,0x0A,0x01,0x00,0x02, \
-													0x47,0x0A,0x0A,0x36,0x36}; \
-								int j = 0, i = sizeof(fpq_x) - 5; \
-								while (i--) { std::cout << (char)(fpq_x[j] ^ (fpq_y[j] ^ 0x69)); j++; } \
-							} while(0);
+#define VER                 " v" VERSION
+#define DEFAULT_SERIAL        "B00B0069"
+#define PRINT_CAPTION       do { \
+                                uint8_t fpq_x[15] = {0x19,0x0f,0x22,0x54,0x25, \
+                                                    0x0d,0x00,0x03,0x0c,0x19, \
+                                                    0x0e,0x15,0x52,0x71,0x6f}; \
+                                uint8_t fpq_y[15] = {0x36,0x36,0x1a,0x1d,0x1c, \
+                                                    0x05,0x0A,0x01,0x00,0x02, \
+                                                    0x47,0x0A,0x0A,0x36,0x36}; \
+                                int j = 0, i = sizeof(fpq_x) - 5; \
+                                while (i--) { std::cout << (char)(fpq_x[j] ^ (fpq_y[j] ^ 0x69)); j++; } \
+                            } while(0);
 
 #ifdef _WIN32
     #if defined(__MINGW64__)
@@ -49,33 +50,57 @@
 
 
 void printHelp() {
-    std::cout << "Usage: fpq_pack [-k] [value] [-h] [value] [-d] [value]" << std::endl;
-    std::cout << "                [-o] [file]  [-c] [file]" << std::endl;
-    std::cout << "                [-b] [file]  [-x] [file]" << std::endl;
-    std::cout << "                [-s] [file]  [-f] [file]" << std::endl << std::endl;
+    std::cout << "Usage: fpq_pack [-k] [encryption key] [-h] [serial number] [-d] [debug]" << std::endl;
+    std::cout << "                [-o] [output file]    [-l] [log file]" << std::endl;
+    std::cout << "                [-c] [file]" << std::endl;
+    std::cout << "                [-b] [file]" << std::endl;
+    std::cout << "                [-s] [file]" << std::endl;
+    std::cout << "                [-x] [file]" << std::endl;
+    std::cout << "                [-f] [file]" << std::endl << std::endl;
     std::cout << "Used to encrypt and package FPQ firmware into a single file." << std::endl;
     std::cout << "\t -o, \toutput file path" << std::endl;
     std::cout << "\t -k, \tencryption key string" << std::endl;
     std::cout << "\t -d, \tdebug mode on (any value)" << std::endl;
+    std::cout << "\t -l, \tlog to file (in debug mode)" << std::endl;
     std::cout << "\t -c, \tfirmware: 'config' path" << std::endl;
     std::cout << "\t -b, \tfirmware: 'u-boot.bin' path" << std::endl;
     std::cout << "\t -x, \tfirmware: 'uImage' path" << std::endl;
     std::cout << "\t -s, \tfirmware: 'media_app_zip.bin' path" << std::endl;
     std::cout << "\t -f, \tfirmware: 'rootfs.cramfs.img' path" << std::endl;
-	std::cout << "\t -h, \tfirmware: serial hex string (default: B00B0069)" << std::endl << std::endl;
+    std::cout << "\t -h, \tfirmware: serial hex string (default: B00B0069)" << std::endl << std::endl;
 }
 
+class FPQLog {
+    public:
+        FPQLog(std::ostream *os = &std::cout) : os(os) { }
+
+        FPQLog &operator=(const FPQLog &log) { this->os = log.os; return *this; }
+
+        template<typename T>
+        void operator()(T t) { *os << t; }
+
+        template<typename F, typename T>
+        void operator()(F f, T t) { *os << f << t; }
+
+        template<typename F, typename T, typename... Args> 
+        void operator()(F f, T t, Args... args) { *os << f << t; this->operator()(args...); }
+    private:
+        std::ostream *os;
+};
+
 struct FPQHeader {
+    typedef uint8_t* iterator;
     struct _field { uint32_t size; uint32_t offset; };
 
-    FPQHeader() { 
-		std::memset((uint8_t*)&_config, 0x00, sizeof(_config) * 5);
-		std::memcpy(firmware_magic, "~magic~firmware~", sizeof(firmware_magic));
-	}
+    FPQHeader() {
+        const std::string magic("~magic~firmware~");
+        std::copy(magic.begin(), magic.end(), firmware_magic);   
+        std::fill_n(begin() + magic.length(), sizeof(_field) * FileNum_, 0);
+    }
 
-    char firmware_magic[16];
+    char firmware_magic[16];   
     _field _config;
-	_field _serial;
+    _field _serial;
     _field _uboot;
     _field _linux;
     _field _liteos;
@@ -83,10 +108,14 @@ struct FPQHeader {
 
     enum Type { Config = 0, Serial, UBoot, Linux, LiteOS, RootFS, FileNum_ };
 
+    iterator begin(void) { return (uint8_t*)firmware_magic; }
+
+    iterator end(void) { return (uint8_t*)(firmware_magic + blkSize()); }
+
     void setSize(FPQHeader::Type type, uint32_t size) {
         switch(type) {
             case Config: _config.size = align(size); break;
-			case Serial: _serial.size = align(size); break;
+            case Serial: _serial.size = align(size); break;
             case UBoot: _uboot.size = align(size); break;
             case Linux: _linux.size = align(size); break;
             case LiteOS: _liteos.size = align(size); break;
@@ -97,23 +126,42 @@ struct FPQHeader {
 
     void updateOffsets(void) {
         _config.offset = blkSize();
-		_serial.offset = _config.offset + _config.size;
+        _serial.offset = _config.offset + _config.size;
         _uboot.offset = _serial.offset + _serial.size;
         _linux.offset = _uboot.offset + _uboot.size;
         _liteos.offset = _linux.offset + _linux.size;
         _rootfs.offset = _liteos.offset + _liteos.size;
     }
+
+    void dumpLog(FPQLog &log){
+        log("****************************************\n");
+        log(std::hex, "config size: 0x", _config.size, ", offset: 0x", _config.offset, "\n");
+        log("serial size: 0x", _serial.size, ", offset: 0x", _serial.offset, "\n");
+        log("uboot size: 0x", _uboot.size, ", offset: 0x", _uboot.offset, "\n");
+        log("linux size: 0x", _linux.size, ", offset: 0x", _linux.offset, "\n");
+        log("liteos size: 0x", _liteos.size, ", offset: 0x", _liteos.offset, "\n");
+        log("rootfs size: 0x", _rootfs.size, ", offset: 0x", _rootfs.offset, "\n");
+        log("****************************************\n");
+    }
     
-	static void makeSerial(uint32_t serial, std::vector<uint8_t> &buf) {
-		uint32_t *serialData;
-		unsigned i, serialSize = buf.size() - sizeof(uint32_t);
-		for (i = 0; i < serialSize; i+=sizeof(serial)) {
-			serialData = (uint32_t*)(buf.data() + i);
-			*serialData = serial;
-		}
-		serialData = (uint32_t*)(buf.data() + i);
-		*serialData = CRC32_Calculate((uint8_t*)buf.data(), serialSize);
-	}
+    static std::vector<uint8_t> makeSerial(uint32_t serial) {
+        std::vector<uint8_t> serialBlk(blkSize());
+        union { 
+            uint32_t value, crc; 
+            uint8_t bytes[sizeof(uint32_t)];
+        } _serial { serial };
+
+        auto it = serialBlk.begin();
+        while(it != serialBlk.end()) {
+            std::copy(_serial.bytes, _serial.bytes + sizeof(uint32_t), it);
+            it += sizeof(uint32_t);
+        }
+
+        _serial.crc = CRC32_Calculate(serialBlk.data(), blkSize() - sizeof(uint32_t));
+        std::copy(_serial.bytes, _serial.bytes + sizeof(uint32_t), it - sizeof(uint32_t));
+
+        return serialBlk;
+    }
 
     static uint32_t align(uint32_t value) {
         return (value % blkSize()) ? value + (blkSize() - (value % blkSize())) : value;
@@ -123,7 +171,47 @@ struct FPQHeader {
         return sizeof(FPQHeader);
     }
 
+    static std::string getName(int type) { 
+        return fileNames[type]; 
+    }
+
+    static const std::vector<std::string> fileNames;
+
 } __attribute__((aligned(512)));
+const std::vector<std::string> FPQHeader::fileNames = { "Config","Serial","UBoot","Linux","Liteos","Rootfs" };
+
+class FPQSerial {
+    public:
+        FPQSerial(const std::string &serialStr) {
+            if (!isValid(serialStr)) throw std::runtime_error("Invalid serial number!");
+            serial = std::stoul(serialStr, 0, 16);
+            this->serialStr = serialStr;
+        }
+        FPQSerial() : FPQSerial(DEFAULT_SERIAL) { }
+
+        uint32_t get(void) const { return serial; }
+        std::string getStr(void) const { return serialStr; }
+
+        FPQSerial &operator=(const FPQSerial &serial) { this->serial = serial.serial; return *this; }
+
+    private:
+        bool isValid(const std::string &serial) {
+            if (serial.length() != correctLen) return false;
+
+            auto validator = [](char ch) {
+                char c = std::tolower(ch);
+                if (c < '0' || c > '9')
+                    if (c < 'a' || c > 'f') return false;
+                return true;
+            };
+
+            return std::find_if_not(serial.begin(), serial.end(), validator) == serial.end();
+        }
+
+        const size_t correctLen = 8;    // strlen(DEFAULT_SERIAL)
+        uint32_t serial;
+        std::string serialStr;
+};
 
 class FPQFile {
     public:
@@ -131,67 +219,56 @@ class FPQFile {
 
         explicit FPQFile(std::string path, FPQFile::OpenMode mode) : file(NULL), fileSize(0) {
             file = fopen(path.c_str(), (mode == FPQFile::OpenMode::RWCreate) ? "w+b" : "r+b");
-            if (file) {
-                fseek(file, 0L, SEEK_END);
-                fileSize = ftell(file);
-                fseek(file, 0L, SEEK_SET);
-            }
+            if (!file) throw std::runtime_error(std::string("Unable open '" + path + "'!").c_str());       
+            fseek(file, 0L, SEEK_END);
+            fileSize = ftell(file);
+            fseek(file, 0L, SEEK_SET);
+            this->path = path;
         }
         explicit FPQFile(std::string path) : FPQFile(path, FPQFile::OpenMode::RWOpen) {}
         ~FPQFile() { if (file) fclose(file); }
 
-        bool isOpened(void) const { return file ? true : false; }
-
-        void seek(long offset) { fseek(file, offset, SEEK_SET); }
+        void setPos(long offset) { fseek(file, offset, SEEK_SET); }
 
         unsigned size() const { return fileSize; }
 
-        bool read(uint8_t *data, unsigned size) {
-            return (fread(data, sizeof(uint8_t), size, file) == size) ? true : false;
+        void read(uint8_t *data, unsigned size) {
+            if (fread(data, sizeof(uint8_t), size, file) != size)
+                throw std::runtime_error(std::string("Unable to read from '" + path + "'!").c_str());
         }
 
-        bool write(uint8_t *data, unsigned size) {
-            return (fwrite(data, sizeof(uint8_t), size, file) == size) ? true : false;
+        void write(std::vector<uint8_t> &data) {
+            if (fwrite(data.data(), sizeof(uint8_t), data.size(), file) != data.size())
+                throw std::runtime_error(std::string("Unable to write to '" + path + "'!").c_str());
         }
+
     private:
         FILE *file;
+        std::string path;
         unsigned fileSize;
 };
 
 class FPQEncryptor {
     public:
         FPQEncryptor() { }
-        FPQEncryptor(std::string key) : key(key) { }
-        FPQEncryptor &operator=(std::string const &key) { this->key = key; return *this; }
-
-        bool isKeyValid(void) const {
-            if (!key.length()) return false;
-            return (sizeof(FPQHeader) % key.length()) ? false : true;
+        FPQEncryptor(std::string key) {
+            if (!key.length() || sizeof(FPQHeader) % key.length())
+                throw std::runtime_error("Error! Encryption key length must be a power of 2!");
+            this->key = key;
         }
+        FPQEncryptor &operator=(const FPQEncryptor &encryptor) { this->key = encryptor.key; return *this; }
+        
+        std::string getKey(void) const { return key; }
 
         void encrypt(std::vector<uint8_t> &data) {
-            if (!isKeyValid()) return;
-            std::vector<uint8_t>::iterator it = data.begin();
-            for (unsigned i = 0; i < (data.size() / key.length()); ++i) {
-				#if 0
-                if (!isEncodingAvailable(it)) {
-                    it += key.length();
-                    continue;
-                }
-				#endif
-                for (auto keyByte : key) { 
-                    *it ^= keyByte; ++it;
-                }
+            if (!key.length()) return;
+            auto it = data.begin();
+            while(it != data.end()) {
+                std::transform(key.begin(), key.end(), it, it, [](uint8_t a, uint8_t b) { return a ^ b; });
+                it += key.length();
             }
         }
     private:
-        bool isEncodingAvailable(std::vector<uint8_t>::iterator it) {
-            for (unsigned i = 0; i < key.length(); ++i) {
-                if (*it) return true; ++it;
-            }        
-            return false;
-        }
-
         std::string key;
 };
 
@@ -211,162 +288,99 @@ std::string getCurrentDir(void) {
     return currentDir;
 }
 
-bool isConfigSpecified(std::map<int,std::string> &fpqFiles) {
-    return fpqFiles[FPQHeader::Type::Config].length() ? true : false;
-}
-
-bool isInputSpecified(std::map<int,std::string> &fpqFiles) {
-    for (const auto &pair : fpqFiles) {
-        if (pair.second.length() && pair.first != FPQHeader::Type::Config) return true;
-    }
-    return false;
-}
-
-bool isSerialValid(std::string serial) {
-	if (serial.length() != std::string(DEFAULT_SERIAL).length()) return false;
-	for (auto item : serial) {
-		auto ch = std::tolower(item);
-		if (ch < '0' || ch > '9') {
-			if (ch < 'a' || ch > 'f') return false;
-		}
-	}
-	return true;
-}
-
-
 int32_t main(int argc, char *argv[]) {
 
     PRINT_LONG_CAPTION;
+    if (sizeof(FPQHeader) != 512) throw std::runtime_error("Alignment test not passed!");
 
     int opt;
     bool debug = false;
+    FPQLog log;
     FPQHeader header;
     FPQEncryptor encryptor;
-    std::map<int,std::string> fpqFiles;
-    std::map<int,std::string> fpqName = {
-        {FPQHeader::Type::Config, "Config"},
-		{FPQHeader::Type::Serial, "Serial"},
-        {FPQHeader::Type::UBoot, "UBoot"},
-        {FPQHeader::Type::Linux, "Linux"},
-        {FPQHeader::Type::LiteOS, "Liteos"},
-        {FPQHeader::Type::RootFS, "Rootfs"}
-    };
+    FPQSerial serial(DEFAULT_SERIAL);
+    std::map<int,std::string> files;
     std::string outputPath = getCurrentDir() + std::string("/firmware.bin");
-	uint32_t serialNumber = std::stoul(std::string(DEFAULT_SERIAL), 0, 16);
+    std::ofstream logFile;
 
-    if (sizeof(FPQHeader) != 512) {
-        std::cout << "\n***Alignment test: ask = 512, take = ";
-        std::cout << sizeof(FPQHeader) << "...Not passed! Exit!***\n" << std::endl;
-        return -1;
-    }
-
-    while((opt = getopt(argc, argv, "c:b:x:s:f:o:k:d:h:")) != -1) {
+    while((opt = getopt(argc, argv, "d:l:c:b:x:s:f:o:k:h:")) != -1) {
         switch(opt) {
             case 'd': debug = true; break;
-            case 'c': fpqFiles[FPQHeader::Type::Config] = std::string(optarg); break;
-            case 'b': fpqFiles[FPQHeader::Type::UBoot] = std::string(optarg);  break;
-            case 'x': fpqFiles[FPQHeader::Type::Linux] = std::string(optarg);  break;
-            case 's': fpqFiles[FPQHeader::Type::LiteOS] = std::string(optarg); break;
-            case 'f': fpqFiles[FPQHeader::Type::RootFS] = std::string(optarg); break;
+            case 'h': serial = FPQSerial(std::string(optarg)); break;
+            case 'k': encryptor = FPQEncryptor(std::string(optarg)); break;
+            case 'c': files[FPQHeader::Type::Config] = std::string(optarg); break;
+            case 'b': files[FPQHeader::Type::UBoot] = std::string(optarg); break;
+            case 'x': files[FPQHeader::Type::Linux] =  std::string(optarg); break;
+            case 's': files[FPQHeader::Type::LiteOS] =  std::string(optarg); break;
+            case 'f': files[FPQHeader::Type::RootFS] = std::string(optarg); break;
             case 'o': outputPath = std::string(optarg); break;
-            case 'k': 
-                encryptor = std::string(optarg);
-                if (!encryptor.isKeyValid()) {
-                    std::cout << "Error! Encryption key length must be a power of two!" << std::endl;
-                    return -1;
-                }
+            case 'l':
+                if (debug) {
+                    log("Logging into file...\n");
+                    logFile.open(std::string(optarg));
+                    if (!logFile.is_open()) throw std::runtime_error("Unable to create log file!");
+                    log = FPQLog(&logFile);
+                } 
             break;
-			case 'h':
-				if (!isSerialValid(std::string(optarg))) {
-					std::cout << "Error! Invalid serial!" << std::endl;
-                    return -1;
-				}
-				serialNumber = std::stoul(std::string(optarg), 0, 16);
-			break;
-            default: 
-                printHelp(); return -1; 
-            break;
+            default: printHelp(); return -1; break;
         }
     }
 
-    if (!isConfigSpecified(fpqFiles)) {
+    if (!files.count(FPQHeader::Type::Config)) {
         printHelp();
-        std::cout << "Error! Config file is not specified!" << std::endl;
+        log("Error! Config file is not specified!\n");
         return -1;
     }
 
-    if (!isInputSpecified(fpqFiles)) {
-        std::cout << "No input files specified! Only serial will be set!" << std::endl;
+    if (debug) log("Output file: '", outputPath, "'\n");
+    if (debug) log("Using encryption key: '", encryptor.getKey(), "'\n");
+    if (debug) {
+        log ("Serial number: '", serial.getStr(), "'");
+        log (std::hex, " --- [0x", serial.get(),"]\n");
     }
 
-    if (debug) std::cout << "Output file: '" << outputPath << "'" << std::endl;
     FPQFile output(outputPath, FPQFile::OpenMode::RWCreate);
-    if (!output.isOpened()) {
-        std::cout << "Unable to open output file!" << std::endl;
-    }
-    output.seek(FPQHeader::blkSize());
+    output.setPos(FPQHeader::blkSize());
 
-    for (unsigned i = 0; i < FPQHeader::Type::FileNum_; ++i) {
+    for (int i = 0; i < FPQHeader::Type::FileNum_; ++i) {
+        if (i == FPQHeader::Type::Serial) {
+            if (debug) log(std::dec, FPQHeader::getName(i), " size is ", FPQHeader::blkSize(), " bytes, blocks: 1\n");
+            std::vector<uint8_t> fileBlock = FPQHeader::makeSerial(serial.get());
+            encryptor.encrypt(fileBlock);
+            output.write(fileBlock);
+            header.setSize((FPQHeader::Type)i, fileBlock.size());
+        }
+        else {
+            if (!files.count(i)) {
+                if (debug) log(FPQHeader::getName(i), " skipping...\n");
+                continue;
+            }
+            
+            FPQFile file(files[i]);
+            int blkToRead = FPQHeader::align(file.size()) / FPQHeader::blkSize(); 
+            if (debug) log(std::dec, FPQHeader::getName(i), " size is ", file.size(), " bytes, blocks: ", blkToRead, "\n");
 
-		if (i == FPQHeader::Type::Serial) {
-			std::vector<uint8_t> fileBlock(FPQHeader::blkSize(), 0);
-			FPQHeader::makeSerial(serialNumber, fileBlock);
-
-			if (debug) {
-				std::cout << fpqName[i] << " size: " << FPQHeader::blkSize() << " bytes";
-				std::cout << ", blk to read: " << FPQHeader::blkSize() / FPQHeader::blkSize() << std::endl;
-			}
-
-			encryptor.encrypt(fileBlock);
-
-			if (!output.write(fileBlock.data(), fileBlock.size())) {
-				std::cout << "Unable to write to '" << outputPath << "'!"<< std::endl;
-				return -1;     
-			}
-			header.setSize((FPQHeader::Type)i, fileBlock.size());
-		}
-		else {
-			FPQFile file(fpqFiles[i]);
-			if (!file.isOpened()) {
-				if (debug) std::cout << fpqName[i] << " skipping..." << std::endl;
-				continue;
-			}
-
-			if (debug) {
-				std::cout << fpqName[i] << " size: " << file.size() << " bytes";
-				std::cout << ", blk to read: " << FPQHeader::align(file.size()) / FPQHeader::blkSize() << std::endl;
-			}
-
-			for (unsigned j = 0; j < FPQHeader::align(file.size()) / FPQHeader::blkSize(); ++j) {
-				std::vector<uint8_t> fileBlock(FPQHeader::blkSize(), 0);
-
-				if (!file.read(fileBlock.data(), std::min(file.size() - j * FPQHeader::blkSize(), FPQHeader::blkSize()))) {
-					std::cout << "Unable to read from '" << fpqFiles[i] << "'!"<< std::endl;
-					return -1;
-				}
-
-				encryptor.encrypt(fileBlock);
-
-				if (!output.write(fileBlock.data(), fileBlock.size())) {
-					std::cout << "Unable to write to '" << outputPath << "'!"<< std::endl;
-					return -1;     
-				}
-			}
-			header.setSize((FPQHeader::Type)i, file.size());
-		}
+            for (int blk = 0; blk < blkToRead; ++blk) {
+                std::vector<uint8_t> fileBlock(FPQHeader::blkSize());
+                int bytesRead = blk * FPQHeader::blkSize();
+                int bytesToRead = std::min(file.size() - bytesRead, FPQHeader::blkSize());
+        
+                file.read(fileBlock.data(), bytesToRead);
+                encryptor.encrypt(fileBlock);
+                output.write(fileBlock);
+            }
+            header.setSize((FPQHeader::Type)i, file.size());
+        }
     }
 
     header.updateOffsets();
-    output.seek(0L);
-    std::vector<uint8_t> fileBlock;
-    fileBlock.resize(FPQHeader::blkSize());
-    std::memcpy(fileBlock.data(), (uint8_t*)&header, fileBlock.size());
-    encryptor.encrypt(fileBlock);
-    if (!output.write(fileBlock.data(), fileBlock.size())) {
-        std::cout << "Unable to write to '" << outputPath << "'!"<< std::endl;
-        return -1;     
-    }
+    if (debug) header.dumpLog(log);
 
-    std::cout << "Done!" << std::endl; 
+    output.setPos(0L);
+    std::vector<uint8_t> headerBlk(header.begin(), header.end());
+    encryptor.encrypt(headerBlk);
+    output.write(headerBlk);
+
+    log("Packaging done!\n");
     return 0;
 }
